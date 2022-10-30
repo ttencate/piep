@@ -1,0 +1,10 @@
+# /home/pi/.config/systemd/user/piep.service
+[Unit]
+Description=Plays a continuous inaudible 10 Hz tone to keep the speakers awake.
+
+[Service]
+ExecStart=/home/pi/piep/piep -f10
+
+[Install]
+WantedBy=graphical-session.target
+PartOf=graphical-session.target
