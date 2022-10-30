@@ -2,9 +2,11 @@
 
 #include <alloca.h>
 
+#include <getopt.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define PI 3.1415926535897932384626433
 
@@ -24,20 +26,79 @@
 
 typedef int16_t sample;
 
-int main() {
+void help(char const *argv0) {
+    printf(
+        "Usage: %s [OPTION]...\n"
+        "Play an infinite sine wave tone through ALSA\n"
+        "\n"
+        "Options are:\n"
+        "  -d DEVICE  Set ALSA device name for playback (default: \"default\")\n"
+        "  -f FREQ    Set tone frequency in Hz (default: 440)\n"
+        "  -h         Show this help\n"
+        "  -r FREQ    Set output sample rate in Hz (default: 44100)\n"
+        "  -v         Enable verbose output on stderr\n"
+        , argv0
+    );
+}
+
+int main(int argc, char **argv) {
     char const *device = "default";
+    float frequency_hz = 440.0f;
+    unsigned int rate_hz = 44100;
+    bool verbose = false;
+
+    while (1) {
+        int opt = getopt(argc, argv, "d:hf:r:v");
+        if (opt < 0) {
+            break;
+        }
+        char *endptr;
+        switch (opt) {
+            case 'd':
+                device = optarg;
+                break;
+            case 'f':
+                frequency_hz = strtod(optarg, &endptr);
+                if (endptr == optarg) {
+                    help(argv[0]);
+                    fprintf(stderr, "invalid float for -f: %s", optarg);
+                    return EXIT_FAILURE;
+                }
+                break;
+            case 'h':
+                help(argv[0]);
+                return EXIT_SUCCESS;
+            case 'r':
+                rate_hz = strtol(optarg, &endptr, 10);
+                if (endptr == optarg) {
+                    help(argv[0]);
+                    fprintf(stderr, "invalid integer for -r: %s", optarg);
+                    return EXIT_FAILURE;
+                }
+                break;
+            case 'v':
+                verbose = true;
+                break;
+            default:
+                help(argv[0]);
+                return EXIT_FAILURE;
+        }
+    }
 
     snd_output_t *output = NULL;
-    CHECKED(snd_output_stdio_attach, &output, stdout, 0);
+    if (verbose) {
+        CHECKED(snd_output_stdio_attach, &output, stderr, 0);
+    }
 
     snd_pcm_t *pcm = NULL;
     CHECKED(snd_pcm_open, &pcm, device, SND_PCM_STREAM_PLAYBACK, 0);
 
-    snd_pcm_dump(pcm, output);
+    if (verbose) {
+        snd_pcm_dump(pcm, output);
+    }
 
     snd_pcm_hw_params_t *hw_params;
     snd_pcm_hw_params_alloca(&hw_params);
-    unsigned int rate_hz = 44100;
     unsigned int period_time_us = 1000000;
     unsigned int buffer_time_us = period_time_us * 3;
     CHECKED(snd_pcm_hw_params_any, pcm, hw_params);
@@ -47,6 +108,10 @@ int main() {
     CHECKED(snd_pcm_hw_params_set_buffer_time_near, pcm, hw_params, &buffer_time_us, NULL);
     CHECKED(snd_pcm_hw_params_set_period_time_near, pcm, hw_params, &period_time_us, NULL);
     CHECKED(snd_pcm_hw_params, pcm, hw_params);
+    if (verbose) {
+        fprintf(stderr, "Using sample rate %u Hz, buffer time %d us, period time %d us\n",
+            rate_hz, buffer_time_us, period_time_us);
+    }
 
     // Create a buffer to hold exactly one period of samples. To avoid
     // confusion with ALSA's internal buffer, we call this a "clip".
@@ -58,10 +123,12 @@ int main() {
     // Round our target frequency so that an integer number of waves fits
     // inside the clip. This avoids sine calculations during playback because
     // we can just loop the same clip seamlessly.
-    float frequency_hz = 440.0f;
     float clip_time_s = (float) clip_size_frames / (float) rate_hz;
     float waves_per_clip = frequency_hz * clip_time_s;
     frequency_hz = clip_time_s * roundf(waves_per_clip);
+    if (verbose) {
+        fprintf(stderr, "Using rounded frequency %f Hz\n", frequency_hz);
+    }
 
     // Fill the clip with a sine wave.
     for (unsigned int i = 0; i < clip_size_frames; i++) {
