@@ -13,4 +13,4 @@ Just run `make`. There is no configurability.
 
 ## Running
 
-Run `./piep`.
+Run `./piep -h` to list available options.
